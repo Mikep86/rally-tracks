@@ -61,7 +61,7 @@
         "retry-until-success": true,
         "include-in-reporting": false
       }
-    },
+    }{% if p_enable_search %},
     {
       "name": "semantic-search",
       "operation": "semantic-search",
@@ -69,5 +69,6 @@
       "time-period": {{ semantic_search_time_period | default(300) | int }},
       "warmup-time-period": {{ semantic_search_warmup_time_period | default(10) | int }}
     }
+    {% endif %}
   ]
 }

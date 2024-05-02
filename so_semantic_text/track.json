@@ -5,6 +5,7 @@
 {% set p_inference_model_id = (inference_model_id | default(".elser_model_2")) %}
 {% set p_task_type = (task_type | default("sparse_embedding")) %}
 {% set p_calculate_body_vector = (calculate_body_vector | default(false)) %}
+{% set p_enable_search = (enable_search | default(false)) %}
 
 {
   "version": 2,
