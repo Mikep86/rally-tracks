@@ -61,6 +61,13 @@
         "retry-until-success": true,
         "include-in-reporting": false
       }
+    },
+    {
+      "name": "semantic-search",
+      "operation": "semantic-search",
+      "clients": {{ semantic_search_clients | default(1) | int }},
+      "time-period": {{ semantic_search_time_period | default(300) | int }},
+      "warmup-time-period": {{ semantic_search_warmup_time_period | default(10) | int }}
     }
   ]
 }
