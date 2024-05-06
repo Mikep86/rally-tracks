@@ -35,6 +35,20 @@ class QueryParamSource(ParamSource):
                     }
                 }
             }
+        elif self._params["use_text_expansion"]:
+            es_query = {
+                "nested": {
+                    "path": "title_semantic.inference.chunks",
+                    "query": {
+                        "text_expansion": {
+                            "title_semantic.inference.chunks.embeddings": {
+                                "model_id": self._params["model_id"],
+                                "model_text": query
+                            }
+                        }
+                    }
+                }
+            }
         else:
             es_query = {
                 "semantic": {

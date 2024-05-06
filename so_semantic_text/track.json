@@ -6,6 +6,7 @@
 {% set p_task_type = (task_type | default("sparse_embedding")) %}
 {% set p_calculate_body_vector = (calculate_body_vector | default(false)) %}
 {% set p_enable_search = (enable_search | default(false)) %}
+{% set p_use_text_expansion = (use_text_expansion | default(false)) %}
 
 {
   "version": 2,
