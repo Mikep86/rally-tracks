@@ -11,12 +11,12 @@
     {
       "name": "create-inference-service",
       "operation-type": "raw-request",
-      "path": "/_inference/{{p_task_type}}/my-inference-id-model",
+      "path": "/_inference/sparse_embedding/my-inference-id-model",
       "method": "PUT",
       "body": {
-        "service": "{{p_inference_service}}",
+        "service": "elser",
         "service_settings": {
-          "model_id": "{{p_inference_model_id}}",
+          "model_id": "{{p_elser_model_id}}",
           "num_allocations": {{ num_allocations | default(1) | int }},
           "num_threads": {{ num_threads | default(1) | int }}
         },
@@ -88,6 +88,6 @@
       "param-source": "semantic-search",
       "size": {{ semantic_search_page_size | default(20) | int }},
       "use_pipelines": {{ p_use_pipelines | lower }},
-      "use_text_expansion": {{ p_use_text_expansion | lower }},
-      "model_id": "{{ p_inference_model_id }}"
+      "use_nested_text_expansion": {{ p_use_nested_text_expansion | lower }},
+      "model_id": "{{ p_elser_model_id }}"
     }

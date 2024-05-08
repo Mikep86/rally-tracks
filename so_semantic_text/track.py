@@ -35,7 +35,7 @@ class QueryParamSource(ParamSource):
                     }
                 }
             }
-        elif self._params["use_text_expansion"]:
+        elif self._params["use_nested_text_expansion"]:
             es_query = {
                 "nested": {
                     "path": "title_semantic.inference.chunks",
