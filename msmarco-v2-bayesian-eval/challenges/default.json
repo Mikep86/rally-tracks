@@ -95,6 +95,12 @@
       "name": "wait-for-bayesian-estimate",
       "operation": "wait-for-bayesian-estimate"
     },
+    {%- if bayesian_estimate_settle_seconds | default(0) | int > 0 %}
+    {
+      "name": "settle-after-bayesian-estimate",
+      "operation": "settle-after-bayesian-estimate"
+    },
+    {%- endif %}
     {%- for op in p_relevance_ops %}
     {
       {%- if op.name is defined %}

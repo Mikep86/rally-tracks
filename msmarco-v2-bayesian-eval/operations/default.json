@@ -79,6 +79,12 @@
   "retry-on-error": true,
   "retry-wait-period": 5,
   "include-in-reporting": false
+},
+{
+  "name": "settle-after-bayesian-estimate",
+  "operation-type": "sleep",
+  "duration": {{ bayesian_estimate_settle_seconds | default(0) }},
+  "include-in-reporting": false
 }
 {%- for op in p_relevance_ops %},
 {

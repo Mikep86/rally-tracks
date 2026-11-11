@@ -63,6 +63,9 @@ This track accepts the following parameters with Rally 0.8.0+ using `--track-par
 * `initial_indexing_ingest_percentage` (default: 100)
 * `force_merge_max_num_segments` (default: 1)
 * `bayesian_estimate_wait_retries` (default: 60): Number of 5 second retries while waiting for bayesian BM25 parameters.
+* `bayesian_estimate_settle_seconds` (default: 0): Seconds to sleep after the bayesian wait step succeeds.
+  On large indices, background merges during indexing already leave bayesian parameters in place, so the wait step can succeed before the estimate for the final force-merged segment has run.
+  The estimate runs asynchronously and no API exposes it, so a fixed sleep (for example 300) is the way to let it finish before evaluating.
 * `relevance_size` (default: 100): Number of hits retrieved per query.
 * `relevance_ops`: List of strategy configurations to evaluate.
   Each entry needs `strategy` and accepts `fields`, `rank_window_size`, `rank_constant` (`rrf`), `normalizer` (`linear`) and `name`.
