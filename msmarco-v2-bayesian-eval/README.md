@@ -17,7 +17,8 @@ Each passage becomes a single chunk attributed to the `text` field.
 Query text still needs embedding at search time.
 The track starts a mock embedding server (`mock_embedding_server.py`) on the load driver, which returns the stored Cohere query embedding for each judged query text and rejects any other input.
 Elasticsearch reaches it through an inference endpoint using the `custom` service.
-The Elasticsearch nodes must be able to reach the load driver on `mock_embedding_port`; set `mock_embedding_host` to the load driver's address when Elasticsearch runs on another host.
+The Elasticsearch nodes must be able to reach the load driver on `mock_embedding_port`.
+By default (`mock_embedding_host: auto`), the endpoint URL uses the load driver's address on the route to the first Elasticsearch node, which works both for a local cluster and for a cluster on other hosts.
 
 The track sets the `xpack.inference.skip_validate_and_start` cluster setting so that creating the endpoint does not send a validation request.
 
@@ -39,9 +40,9 @@ Bayesian BM25 parameters are estimated per shard after a merge, so the schedule 
   Exact kNN reaches nDCG@10 of 0.234 on this corpus versus 0.556 on the full corpus.
   Compare strategies with each other, not with published results.
 * There are only 76 judged queries.
-* `--test-mode` needs a `-1k` file for every corpus file, but `cohere-documents-04_base64_1M-1k.json.zst` is not published.
-  To run in test mode, place a stand-in with that name in Rally's local data directory for the corpus (for example, a copy of `cohere-documents-01_base64-1k.json.zst`).
-  The test-mode documents contain no relevant passages, so every strategy scores nDCG 0.
+* `--test-mode` does not work, because `cohere-documents-04_base64_1M-1k.json.zst` is not published.
+  For a smoke run, use `corpora: ["msmarco-v2_base64-1k"]` instead.
+  Its 1,000 documents contain no relevant passages, so every strategy scores nDCG 0.
 
 ### Parameters
 
@@ -51,7 +52,10 @@ This track accepts the following parameters with Rally 0.8.0+ using `--track-par
 * `number_of_shards` (default: 1)
 * `number_of_replicas` (default: 0)
 * `inference_id` (default: `mock-cohere-embed-v3`): ID of the inference endpoint used by `body_semantic`.
-* `mock_embedding_host` (default: `localhost`): Address at which Elasticsearch reaches the mock embedding server.
+* `corpora` (default: `["msmarco-v2_base64-10-million"]`): Corpora to index.
+  `msmarco-v2_base64-1k` holds the first 1,000 documents of the 10M corpus and is meant for smoke runs.
+* `mock_embedding_host` (default: `auto`): Address at which Elasticsearch reaches the mock embedding server.
+  `auto` uses the load driver's address on the route to the first Elasticsearch node.
 * `mock_embedding_port` (default: 18080): Port of the mock embedding server.
 * `initial_indexing_bulk_size` (default: 200)
 * `initial_indexing_bulk_indexing_clients` (default: 5)

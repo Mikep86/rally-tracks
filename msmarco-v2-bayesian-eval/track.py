@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import signal
+import socket
 import struct
 import subprocess
 import sys
@@ -244,6 +245,21 @@ class StopMockEmbeddingServerRunner:
         return "stop-mock-embedding-server"
 
 
+def _local_address_towards(es):
+    """
+    The address of this load driver as seen from the first Elasticsearch node, so that a remote node can reach the mock
+    embedding server. Connecting a UDP socket only selects a route; no packets are sent.
+    """
+    try:
+        es_host = es.transport.node_pool.all()[0].config.host
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect((es_host, 9))
+            return s.getsockname()[0]
+    except (AttributeError, IndexError, OSError) as e:
+        logger.warning("Could not determine the route to Elasticsearch [%s]; falling back to the host name's address", e)
+        return socket.gethostbyname(socket.gethostname())
+
+
 class PutMockInferenceEndpointRunner:
     """
     (Re)creates a custom-service text_embedding endpoint pointing at the mock embedding server. Its dimensions and
@@ -252,6 +268,9 @@ class PutMockInferenceEndpointRunner:
 
     async def __call__(self, es, params):
         inference_id = params["inference-id"]
+        host = _local_address_towards(es) if params["host"] == "auto" else params["host"]
+        url = f"http://{host}:{params['port']}/embed"
+        logger.info("Creating inference endpoint [%s] for mock embedding server at [%s]", inference_id, url)
         path = f"/_inference/text_embedding/{inference_id}"
         try:
             await es.perform_request(method="DELETE", path=path, params={"force": "true"})
@@ -264,7 +283,7 @@ class PutMockInferenceEndpointRunner:
             body={
                 "service": "custom",
                 "service_settings": {
-                    "url": f"http://{params['host']}:{params['port']}/embed",
+                    "url": url,
                     "request": '{"input": ${input}}',
                     "response": {"json_parser": {"text_embeddings": "$.embeddings[*].embedding"}},
                     "dimensions": DIMS,

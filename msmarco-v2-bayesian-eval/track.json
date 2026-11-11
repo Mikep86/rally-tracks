@@ -15,6 +15,18 @@
   ],
   "corpora": [
     {
+      "name": "msmarco-v2_base64-1k",
+      "base-url": "{{_base_url}}",
+      "documents": [
+        {
+          "source-file": "cohere-documents-01_base64-1k.json.zst",
+          "document-count": 1000,
+          "compressed-bytes": 4143673,
+          "uncompressed-bytes": 5848223
+        }
+      ]
+    },
+    {
       "name": "msmarco-v2_base64-10-million",
       "base-url": "{{_base_url}}",
       "documents": [

@@ -30,7 +30,7 @@
   "name": "put-mock-inference-endpoint",
   "operation-type": "put-mock-inference-endpoint",
   "inference-id": {{ inference_id | default("mock-cohere-embed-v3") | tojson }},
-  "host": {{ mock_embedding_host | default("localhost") | tojson }},
+  "host": {{ mock_embedding_host | default("auto") | tojson }},
   "port": {{ mock_embedding_port | default(18080) }}
 },
 {
@@ -50,7 +50,7 @@
   "operation-type": "bulk",
   "param-source": "semantic-bulk-param-source",
   "inference-id": {{ inference_id | default("mock-cohere-embed-v3") | tojson }},
-  "corpora": ["msmarco-v2_base64-10-million"],
+  "corpora": {{ corpora | default(["msmarco-v2_base64-10-million"]) | tojson }},
   "bulk-size": {{ initial_indexing_bulk_size | default(200) }},
   "ingest-percentage": {{ initial_indexing_ingest_percentage | default(100) }}
 },
