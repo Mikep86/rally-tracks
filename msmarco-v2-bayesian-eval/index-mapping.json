@@ -1,0 +1,32 @@
+{
+  "settings": {
+    "index.number_of_shards": {{ number_of_shards | default(1) }},
+    "index.number_of_replicas": {{ number_of_replicas | default(0) }}
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "docid": {
+        "type": "keyword"
+      },
+      "title": {
+        "type": "text"
+      },
+      "text": {
+        "type": "text"
+      },
+      "body_semantic": {
+        "type": "semantic_text",
+        "inference_id": {{ inference_id | default("mock-cohere-embed-v3") | tojson }},
+        "chunking_settings": {
+          "strategy": "none"
+        },
+        "index_options": {
+          "dense_vector": {
+            "type": "bbq_disk"
+          }
+        }
+      }
+    }
+  }
+}

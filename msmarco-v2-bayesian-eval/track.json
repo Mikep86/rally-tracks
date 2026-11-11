@@ -1,0 +1,54 @@
+{% import "rally.helpers" as rally with context %}
+{% set _base_url = (base_url | default("https://rally-tracks.elastic.co/cohere-msmarco-v2-embed-english-v3")) %}
+{
+  "version": 2,
+  "description": "Relevance of bayesian multi_match vs rrf and linear retrievers over semantic_text and text fields on msmarco-v2 passage data",
+  "dependencies": [
+    "pytrec_eval==0.5",
+    "numpy"
+  ],
+  "indices": [
+    {
+      "name": "msmarco-v2",
+      "body": "index-mapping.json"
+    }
+  ],
+  "corpora": [
+    {
+      "name": "msmarco-v2_base64-10-million",
+      "base-url": "{{_base_url}}",
+      "documents": [
+        {
+          "source-file": "cohere-documents-01_base64.json.zst",
+          "document-count": 3000000,
+          "compressed-bytes": 12374163247,
+          "uncompressed-bytes": 17578585938
+        },
+        {
+          "source-file": "cohere-documents-02_base64.json.zst",
+          "document-count": 3000000,
+          "compressed-bytes": 12370580598,
+          "uncompressed-bytes": 17578145869
+        },
+        {
+          "source-file": "cohere-documents-03_base64.json.zst",
+          "document-count": 3000000,
+          "compressed-bytes": 12363471153,
+          "uncompressed-bytes": 17566069533
+        },
+        {
+          "source-file": "cohere-documents-04_base64_1M.json.zst",
+          "document-count": 1000000,
+          "compressed-bytes": 4113839373,
+          "uncompressed-bytes": 5855702760
+        }
+      ]
+    }
+  ],
+  "operations": [
+    {{ rally.collect(parts="operations/*.json") }}
+  ],
+  "challenges": [
+    {{ rally.collect(parts="challenges/*.json") }}
+  ]
+}

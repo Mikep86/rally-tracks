@@ -1,0 +1,96 @@
+{% set p_relevance_ops = (relevance_ops | default([
+  {"strategy": "lexical"},
+  {"strategy": "semantic"},
+  {"strategy": "bayesian"},
+  {"strategy": "rrf", "rank_constant": 60, "rank_window_size": 100},
+  {"strategy": "linear", "normalizer": "minmax", "rank_window_size": 100}
+])) %}
+{
+  "name": "start-mock-embedding-server",
+  "operation-type": "start-mock-embedding-server",
+  "port": {{ mock_embedding_port | default(18080) }}
+},
+{
+  "name": "stop-mock-embedding-server",
+  "operation-type": "stop-mock-embedding-server",
+  "port": {{ mock_embedding_port | default(18080) }}
+},
+{
+  "name": "skip-inference-endpoint-validation",
+  "operation-type": "raw-request",
+  "method": "PUT",
+  "path": "/_cluster/settings",
+  "body": {
+    "persistent": {
+      "xpack.inference.skip_validate_and_start": true
+    }
+  }
+},
+{
+  "name": "put-mock-inference-endpoint",
+  "operation-type": "put-mock-inference-endpoint",
+  "inference-id": {{ inference_id | default("mock-cohere-embed-v3") | tojson }},
+  "host": {{ mock_embedding_host | default("localhost") | tojson }},
+  "port": {{ mock_embedding_port | default(18080) }}
+},
+{
+  "name": "create-index",
+  "operation-type": "create-index"
+},
+{
+  "name": "check-cluster-health",
+  "operation-type": "cluster-health",
+  "request-params": {
+    "wait_for_status": "green"
+  },
+  "retry-until-success": true
+},
+{
+  "name": "initial-documents-indexing",
+  "operation-type": "bulk",
+  "param-source": "semantic-bulk-param-source",
+  "inference-id": {{ inference_id | default("mock-cohere-embed-v3") | tojson }},
+  "corpora": ["msmarco-v2_base64-10-million"],
+  "bulk-size": {{ initial_indexing_bulk_size | default(200) }},
+  "ingest-percentage": {{ initial_indexing_ingest_percentage | default(100) }}
+},
+{
+  "name": "force-merge",
+  "operation-type": "force-merge",
+  "max-num-segments": {{ force_merge_max_num_segments | default(1) }},
+  "request-timeout": 36000,
+  "include-in-reporting": true
+},
+{
+  "name": "wait-for-bayesian-estimate",
+  "operation-type": "search",
+  "index": "msmarco-v2",
+  "body": {
+    "size": 1,
+    "query": {
+      "multi_match": {
+        "query": "estimate",
+        "type": "bayesian",
+        "fields": ["title", "text"]
+      }
+    }
+  },
+  "retries": {{ bayesian_estimate_wait_retries | default(60) }},
+  "retry-on-error": true,
+  "retry-wait-period": 5,
+  "include-in-reporting": false
+}
+{%- for op in p_relevance_ops %},
+{
+  {%- if op.name is defined %}
+  "name": {{ op.name | tojson }},
+  {%- else %}
+  "name": {{ ("relevance-" ~ op.strategy ~ (("-" ~ op.rank_constant) if op.rank_constant is defined else "") ~ (("-" ~ op.normalizer) if op.normalizer is defined else "")) | tojson }},
+  {%- endif %}
+  "operation-type": "relevance",
+  "param-source": "relevance-param-source",
+  "size": {{ relevance_size | default(100) }},
+  "strategy-params": {{ op | tojson }},
+  "include-in-reporting": false
+}
+{%- endfor %}

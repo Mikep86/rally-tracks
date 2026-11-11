@@ -1,0 +1,115 @@
+{% set p_relevance_ops = (relevance_ops | default([
+  {"strategy": "lexical"},
+  {"strategy": "semantic"},
+  {"strategy": "bayesian"},
+  {"strategy": "rrf", "rank_constant": 60, "rank_window_size": 100},
+  {"strategy": "linear", "normalizer": "minmax", "rank_window_size": 100}
+])) %}
+{
+  "name": "index-and-evaluate",
+  "description": "Index msmarco-v2 passages with precomputed semantic_text embeddings, then score each retrieval strategy with nDCG against the TREC-DL 2022 qrels",
+  "default": true,
+  "schedule": [
+    {
+      "operation": {
+        "operation-type": "delete-index"
+      }
+    },
+    {
+      "name": "start-mock-embedding-server",
+      "operation": "start-mock-embedding-server"
+    },
+    {
+      "name": "skip-inference-endpoint-validation",
+      "operation": "skip-inference-endpoint-validation"
+    },
+    {
+      "name": "put-mock-inference-endpoint",
+      "operation": "put-mock-inference-endpoint"
+    },
+    {
+      "name": "create-index",
+      "operation": "create-index"
+    },
+    {
+      "name": "check-cluster-health",
+      "operation": "check-cluster-health"
+    },
+    {
+      "name": "initial-documents-indexing",
+      "operation": "initial-documents-indexing",
+      "warmup-time-period": {{ initial_indexing_bulk_warmup | default(40) | int }},
+      "clients": {{ initial_indexing_bulk_indexing_clients | default(5) | int }}
+    },
+    {
+      "name": "refresh-after-index",
+      "operation": {
+        "operation-type": "refresh",
+        "request-timeout": 1000,
+        "include-in-reporting": true
+      }
+    },
+    {
+      "name": "wait-until-merges-finish-after-index",
+      "operation": {
+        "operation-type": "index-stats",
+        "index": "_all",
+        "condition": {
+          "path": "_all.total.merges.current",
+          "expected-value": 0
+        },
+        "retries": 1440,
+        "retry-on-error": true,
+        "retry-wait-period": 30,
+        "include-in-reporting": false
+      }
+    },
+    {
+      "name": "force-merge-after-index",
+      "operation": "force-merge"
+    },
+    {
+      "name": "wait-until-force-merge-completes",
+      "operation": {
+        "operation-type": "index-stats",
+        "index": "_all",
+        "condition": {
+          "path": "_all.total.merges.current",
+          "expected-value": 0
+        },
+        "retries": 1440,
+        "retry-on-error": true,
+        "retry-wait-period": 30,
+        "include-in-reporting": false
+      }
+    },
+    {
+      "name": "refresh-after-force-merge",
+      "operation": {
+        "operation-type": "refresh",
+        "request-timeout": 1000,
+        "include-in-reporting": false
+      }
+    },
+    {
+      "name": "wait-for-bayesian-estimate",
+      "operation": "wait-for-bayesian-estimate"
+    },
+    {%- for op in p_relevance_ops %}
+    {
+      {%- if op.name is defined %}
+      "name": {{ op.name | tojson }},
+      "operation": {{ op.name | tojson }}
+      {%- else %}
+      {%- set op_name = "relevance-" ~ op.strategy ~ (("-" ~ op.rank_constant) if op.rank_constant is defined else "") ~ (("-" ~ op.normalizer) if op.normalizer is defined else "") %}
+      "name": {{ op_name | tojson }},
+      "operation": {{ op_name | tojson }}
+      {%- endif %}
+    },
+    {%- endfor %}
+    {
+      "name": "stop-mock-embedding-server",
+      "operation": "stop-mock-embedding-server"
+    }
+  ]
+}
