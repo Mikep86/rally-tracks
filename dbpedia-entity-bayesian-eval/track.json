@@ -1,0 +1,54 @@
+{% import "rally.helpers" as rally with context %}
+{% set _base_url = (base_url | default("https://rally-tracks.elastic.co/search/mteb/dbpedia")) %}
+{
+  "version": 2,
+  "description": "Relevance of bayesian multi_match vs rrf and linear retrievers over semantic_text and text fields on DBPedia-entity",
+  "dependencies": [
+    "pytrec_eval==0.5",
+    "numpy"
+  ],
+  "indices": [
+    {
+      "name": "dbpedia-entity",
+      "body": "index-mapping.json"
+    }
+  ],
+  "corpora": [
+    {
+      "name": "dbpedia-entity-jina-v5-1k",
+      "base-url": "{{_base_url}}",
+      "documents": [
+        {
+          "source-file": "jina-v5-documents-1k.json.zst",
+          "document-count": 823,
+          "compressed-bytes": 3529635,
+          "uncompressed-bytes": 4870560
+        }
+      ]
+    },
+    {
+      "name": "dbpedia-entity-jina-v5",
+      "base-url": "{{_base_url}}",
+      "documents": [
+        {
+          "source-file": "jina-v5-documents-01.json.zst",
+          "document-count": 3000000,
+          "compressed-bytes": 12741352802,
+          "uncompressed-bytes": 17594913513
+        },
+        {
+          "source-file": "jina-v5-documents-02.json.zst",
+          "document-count": 1635922,
+          "compressed-bytes": 6914813681,
+          "uncompressed-bytes": 9552573188
+        }
+      ]
+    }
+  ],
+  "operations": [
+    {{ rally.collect(parts="operations/*.json") }}
+  ],
+  "challenges": [
+    {{ rally.collect(parts="challenges/*.json") }}
+  ]
+}
