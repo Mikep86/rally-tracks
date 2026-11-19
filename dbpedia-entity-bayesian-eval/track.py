@@ -6,6 +6,7 @@ import http.client
 import json
 import logging
 import os
+import re
 import signal
 import socket
 import struct
@@ -38,17 +39,37 @@ DEFAULT_QUERY_FIELDS = ["title", "text", SEMANTIC_FIELD]
 DEFAULT_LEXICAL_FIELDS = ["title", "text"]
 
 
-def calc_ndcg(qrels: Qrels, results: Results, k_list: list, query_ids: list):
+def calc_ndcg_per_query(qrels: Qrels, results: Results, k_list: list, query_ids: list):
     """
-    Mean nDCG@k over all query_ids. A query with no hits scores 0 instead of being dropped, which pytrec_eval would do.
+    nDCG@k of each query in query_ids, in that order. A query with no hits scores 0 instead of being dropped, which pytrec_eval
+    would do.
     """
     import pytrec_eval as pe
 
     evaluator = pe.RelevanceEvaluator(qrels, {f"ndcg_cut.{','.join(str(k) for k in k_list)}"})
     per_query = evaluator.evaluate({qid: results.get(qid, {}) for qid in query_ids})
-    return {
-        k: sum(per_query.get(qid, {}).get(f"ndcg_cut_{k}", 0.0) for qid in query_ids) / len(query_ids) if query_ids else 0.0 for k in k_list
-    }
+    return {k: [per_query.get(qid, {}).get(f"ndcg_cut_{k}", 0.0) for qid in query_ids] for k in k_list}
+
+
+# Prefix of the rally.log lines that carry per-query hits and fitted bayesian parameters, one JSON object per line, so that
+# reliability plots can be drawn from the Rally log artifact of a run
+DUMP_LOG_PREFIX: str = "bayesian-eval-dump"
+
+
+def log_dump(record: dict):
+    logger.info("%s %s", DUMP_LOG_PREFIX, json.dumps(record, separators=(",", ":")))
+
+
+def relevance_op_name(strategy_params: dict) -> str:
+    """The operation name the challenge gives a relevance op."""
+    if "name" in strategy_params:
+        return strategy_params["name"]
+    name = "relevance-" + strategy_params["strategy"]
+    if "rank_constant" in strategy_params:
+        name += f"-{strategy_params['rank_constant']}"
+    if "normalizer" in strategy_params:
+        name += f"-{strategy_params['normalizer']}"
+    return name
 
 
 def read_qrels(qrels_input_file):
@@ -354,12 +375,16 @@ class RelevanceParamSource:
 
 class RelevanceRunner:
     """
-    Runs every judged query with one retrieval strategy and reports mean nDCG@10 and nDCG@100 against the qrels.
+    Runs every judged query with one retrieval strategy and reports mean nDCG@10 and nDCG@100 against the qrels, plus each
+    query's nDCG in query order, so that strategies can be compared per query. For the bayesian strategy, whose scores are
+    probabilities, it also logs each query's hits with their scores (see log_dump).
     """
 
     async def __call__(self, es, params):
         strategy_params = params["strategy-params"]
         size = params["size"]
+        op_name = relevance_op_name(strategy_params)
+        dump_hits = strategy_params["strategy"] == "bayesian"
         results = defaultdict(dict)
         query_ids = []
         for query in params["queries"]:
@@ -372,23 +397,107 @@ class RelevanceRunner:
                 headers={"Content-Type": "application/json"},
                 body=build_search_body(strategy_params, query["text"], size),
             )
-            for hit in response["hits"]["hits"]:
+            hits = response["hits"]["hits"]
+            for hit in hits:
                 results[query["query_id"]][hit["_id"]] = hit["_score"]
+            if dump_hits:
+                log_dump({"kind": "hits", "op": op_name, "query_id": query["query_id"], "hits": [[h["_id"], h["_score"]] for h in hits]})
 
-        ndcg = calc_ndcg(params["qrels"], results, [10, 100], query_ids)
+        per_query = calc_ndcg_per_query(params["qrels"], results, [10, 100], query_ids)
         result = {
             **strategy_params,
             "size": size,
             "queries": len(query_ids),
             "queries_with_hits": len(results),
-            "ndcg_10": ndcg[10],
-            "ndcg_100": ndcg[100],
+            "ndcg_10": sum(per_query[10]) / len(query_ids) if query_ids else 0.0,
+            "ndcg_100": sum(per_query[100]) / len(query_ids) if query_ids else 0.0,
+            "query_ids": query_ids,
+            "ndcg_10_per_query": per_query[10],
+            "ndcg_100_per_query": per_query[100],
         }
-        logger.info("Relevance results: %s", result)
+        logger.info(
+            "Relevance results: %s",
+            {key: value for key, value in result.items() if key not in ("query_ids", "ndcg_10_per_query", "ndcg_100_per_query")},
+        )
         return result
 
     def __repr__(self, *args, **kwargs):
         return "relevance"
+
+
+class BayesianCalibrationParamSource:
+    def __init__(self, track, params, **kwargs):
+        if len(track.indices) == 1:
+            default_index = track.indices[0].name
+        else:
+            default_index = "_all"
+        self._index_name = params.get("index", default_index)
+        self._size = params.get("size", 100)
+        self._fields = params["fields"]
+        self._queries = read_queries(os.path.join(TRACK_DIR, QUERIES_FILENAME))
+        self.infinite = True
+
+    def partition(self, partition_index, total_partitions):
+        return self
+
+    def params(self):
+        return {"index": self._index_name, "size": self._size, "fields": self._fields, "queries": self._queries}
+
+
+PARAMETER_PATTERN = re.compile(r"(alpha|beta|baseRate)=([-+0-9.eE]+)")
+
+
+class BayesianCalibrationRunner:
+    """
+    Records what reliability plots of each bayesian signal need, through log_dump:
+    - the bayesian parameters each field was fitted with, read from a _validate/query explanation of a single-field bayesian
+      multi_match ("kind": "parameters", one record per field and shard);
+    - for every judged query and field, the hits of a single-field bayesian multi_match with their scores, which are that
+      field's calibrated probabilities ("kind": "hits", op "calibration-<field>").
+    The parameters are also returned, so they are stored with the operation's metrics.
+    """
+
+    async def __call__(self, es, params):
+        index, size, fields, queries = params["index"], params["size"], params["fields"], params["queries"]
+        # A judged query, so that the mock embedding server can embed it for the semantic field
+        probe = queries[0]["text"]
+        parameters = {}
+        for field in fields:
+            response = await es.perform_request(
+                method="POST",
+                path=f"/{index}/_validate/query",
+                params={"explain": "true", "rewrite": "true"},
+                headers={"Content-Type": "application/json"},
+                body={"query": {"multi_match": {"query": probe, "type": "bayesian", "fields": [field]}}},
+            )
+            explanations = [e.get("explanation", "") for e in response["explanations"]]
+            per_shard = []
+            for explanation in explanations:
+                found = {name: float(value) for name, value in PARAMETER_PATTERN.findall(explanation)}
+                per_shard.append(found)
+                log_dump({"kind": "parameters", "field": field, "parameters": found, "explanation": explanation})
+            parameters[field] = per_shard[0] if per_shard else {}
+        for field in fields:
+            for query in queries:
+                response = await es.perform_request(
+                    method="POST",
+                    path=f"/{index}/_search",
+                    params={"request_cache": "false"},
+                    headers={"Content-Type": "application/json"},
+                    body={
+                        "query": {"multi_match": {"query": query["text"], "type": "bayesian", "fields": [field]}},
+                        "size": size,
+                        "_source": False,
+                    },
+                )
+                hits = [[h["_id"], h["_score"]] for h in response["hits"]["hits"]]
+                log_dump({"kind": "hits", "op": f"calibration-{field}", "field": field, "query_id": query["query_id"], "hits": hits})
+        result = {"fields": fields, "queries": len(queries), "size": size, "parameters": parameters}
+        logger.info("Bayesian calibration parameters: %s", parameters)
+        return result
+
+    def __repr__(self, *args, **kwargs):
+        return "bayesian-calibration"
 
 
 def register(registry):
@@ -398,3 +507,5 @@ def register(registry):
     registry.register_runner("stop-mock-embedding-server", StopMockEmbeddingServerRunner(), async_runner=True)
     registry.register_runner("put-mock-inference-endpoint", PutMockInferenceEndpointRunner(), async_runner=True)
     registry.register_runner("relevance", RelevanceRunner(), async_runner=True)
+    registry.register_param_source("bayesian-calibration-param-source", BayesianCalibrationParamSource)
+    registry.register_runner("bayesian-calibration", BayesianCalibrationRunner(), async_runner=True)

@@ -101,6 +101,12 @@
       "operation": "settle-after-bayesian-estimate"
     },
     {%- endif %}
+    {%- if bayesian_calibration_dump | default(true) %}
+    {
+      "name": "dump-bayesian-calibration",
+      "operation": "dump-bayesian-calibration"
+    },
+    {%- endif %}
     {%- for op in p_relevance_ops %}
     {
       {%- if op.name is defined %}

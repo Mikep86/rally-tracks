@@ -79,6 +79,23 @@ This track accepts the following parameters with Rally 0.8.0+ using `--track-par
     {"strategy": "linear", "normalizer": "minmax", "rank_window_size": 100}
   ]
   ```
+* `bayesian_calibration_dump` (default: `true`): Whether to run `dump-bayesian-calibration` before the relevance operations.
+* `bayesian_calibration_fields` (default: `["title", "text", "body_semantic"]`): Fields whose bayesian calibration is recorded, one at a time.
+
+### Per-query results and calibration data
+
+Every relevance operation stores, next to the mean nDCG, `query_ids` and the matching `ndcg_10_per_query` and `ndcg_100_per_query` lists in the `meta` of its metrics documents, so strategies can be compared query by query.
+
+The data for reliability plots goes to `rally.log`, one JSON object per line after the prefix `bayesian-eval-dump`:
+
+* `dump-bayesian-calibration` writes one `"kind": "parameters"` record per field and shard, with the `alpha`, `beta` and `baseRate` read from a `_validate/query` explanation of a single-field bayesian `multi_match`.
+  The parameters of the first shard are also stored in the operation's `meta.parameters`.
+* It then writes one `"kind": "hits"` record per judged query and field, with `"op": "calibration-<field>"` and the top `relevance_size` hits of a single-field bayesian `multi_match` as `[id, score]` pairs.
+  These scores are the field's calibrated probabilities.
+* Relevance operations with the `bayesian` strategy write a `"kind": "hits"` record per query for the fused probabilities, with the operation name in `op`.
+
+Join the hits with `qrels.tsv` to compute reliability curves; unjudged documents count as not relevant.
+`dump-bayesian-calibration` runs one search per field and judged query, so it adds about as much time as one relevance operation per field.
 
 ### License
 

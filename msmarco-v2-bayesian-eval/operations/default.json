@@ -85,6 +85,14 @@
   "operation-type": "sleep",
   "duration": {{ bayesian_estimate_settle_seconds | default(0) }},
   "include-in-reporting": false
+},
+{
+  "name": "dump-bayesian-calibration",
+  "operation-type": "bayesian-calibration",
+  "param-source": "bayesian-calibration-param-source",
+  "size": {{ relevance_size | default(100) }},
+  "fields": {{ bayesian_calibration_fields | default(["title", "text", "body_semantic"]) | tojson }},
+  "include-in-reporting": false
 }
 {%- for op in p_relevance_ops %},
 {
