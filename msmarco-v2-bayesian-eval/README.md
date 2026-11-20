@@ -84,7 +84,8 @@ This track accepts the following parameters with Rally 0.8.0+ using `--track-par
 
 ### Per-query results and calibration data
 
-Every relevance operation stores, next to the mean nDCG, `query_ids` and the matching `ndcg_10_per_query` and `ndcg_100_per_query` lists in the `meta` of its metrics documents, so strategies can be compared query by query.
+Every relevance operation stores, next to the mean nDCG, `query_ids` and the matching `ndcg_10_per_query_json` and `ndcg_100_per_query_json` in the `meta` of its metrics documents, so strategies can be compared query by query.
+The per-query nDCG lists are JSON-encoded strings, because the metrics store would map an array of 128 or more floats as a `dense_vector` and then reject runs with a different number of queries.
 
 The data for reliability plots goes to `rally.log`, one JSON object per line after the prefix `bayesian-eval-dump`:
 

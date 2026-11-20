@@ -412,12 +412,14 @@ class RelevanceRunner:
             "ndcg_10": sum(per_query[10]) / len(query_ids) if query_ids else 0.0,
             "ndcg_100": sum(per_query[100]) / len(query_ids) if query_ids else 0.0,
             "query_ids": query_ids,
-            "ndcg_10_per_query": per_query[10],
-            "ndcg_100_per_query": per_query[100],
+            # JSON strings, not float arrays: dynamic mapping turns a float array of 128 to 4096 values into a dense_vector,
+            # whose dimension count then rejects runs with a different number of queries in the same metrics index
+            "ndcg_10_per_query_json": json.dumps([round(v, 6) for v in per_query[10]]),
+            "ndcg_100_per_query_json": json.dumps([round(v, 6) for v in per_query[100]]),
         }
         logger.info(
             "Relevance results: %s",
-            {key: value for key, value in result.items() if key not in ("query_ids", "ndcg_10_per_query", "ndcg_100_per_query")},
+            {key: value for key, value in result.items() if key not in ("query_ids", "ndcg_10_per_query_json", "ndcg_100_per_query_json")},
         )
         return result
 
