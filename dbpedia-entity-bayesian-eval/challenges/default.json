@@ -27,6 +27,12 @@
       "name": "put-mock-inference-endpoint",
       "operation": "put-mock-inference-endpoint"
     },
+    {%- if bayesian_estimator_debug_logging | default(true) %}
+    {
+      "name": "enable-bayesian-estimator-debug-logging",
+      "operation": "enable-bayesian-estimator-debug-logging"
+    },
+    {%- endif %}
     {
       "name": "create-index",
       "operation": "create-index"

@@ -92,7 +92,21 @@
   "param-source": "bayesian-calibration-param-source",
   "size": {{ relevance_size | default(100) }},
   "fields": {{ bayesian_calibration_fields | default(["title", "text", "body_semantic"]) | tojson }},
+  "candidate-scores": {{ bayesian_candidate_scores | default(true) | tojson }},
+  "candidate-depths": {{ bayesian_candidate_depths | default({"title": 1000, "text": 1000, "body_semantic": 100}) | tojson }},
+  "fused-strategies": {{ p_relevance_ops | selectattr("strategy", "equalto", "bayesian") | list | tojson }},
   "include-in-reporting": false
+},
+{
+  "name": "enable-bayesian-estimator-debug-logging",
+  "operation-type": "raw-request",
+  "method": "PUT",
+  "path": "/_cluster/settings",
+  "body": {
+    "persistent": {
+      "logger.org.elasticsearch.index.shard.BayesianBM25ShardEstimator": "DEBUG"
+    }
+  }
 }
 {%- for op in p_relevance_ops %},
 {

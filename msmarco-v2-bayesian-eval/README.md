@@ -81,6 +81,10 @@ This track accepts the following parameters with Rally 0.8.0+ using `--track-par
   ```
 * `bayesian_calibration_dump` (default: `true`): Whether to run `dump-bayesian-calibration` before the relevance operations.
 * `bayesian_calibration_fields` (default: `["title", "text", "body_semantic"]`): Fields whose bayesian calibration is recorded, one at a time.
+* `bayesian_candidate_scores` (default: `true`): Whether `dump-bayesian-calibration` also records every field's probability for each query's candidates.
+* `bayesian_candidate_depths` (default: `{"title": 1000, "text": 1000, "body_semantic": 100}`): Number of each field's top hits that become candidates.
+  Fields not listed use `relevance_size`.
+* `bayesian_estimator_debug_logging` (default: `true`): Whether to set the `org.elasticsearch.index.shard.BayesianBM25ShardEstimator` logger to `DEBUG` before indexing, so that the Elasticsearch logs show which estimates fell back to a default.
 
 ### Per-query results and calibration data
 
@@ -93,10 +97,15 @@ The data for reliability plots goes to `rally.log`, one JSON object per line aft
   The parameters of the first shard are also stored in the operation's `meta.parameters`.
 * It then writes one `"kind": "hits"` record per judged query and field, with `"op": "calibration-<field>"` and the top `relevance_size` hits of a single-field bayesian `multi_match` as `[id, score]` pairs.
   These scores are the field's calibrated probabilities.
+* With `bayesian_candidate_scores`, it then writes one `"kind": "scores"` record per judged query, with `fields` and, for each candidate, `[id, probability per field]`.
+  The candidates are the union of each field's top `bayesian_candidate_depths` hits and the top `relevance_size` hits of every `bayesian` strategy in `relevance_ops`.
+  A field that does not match a candidate has `null` for it, which contributes nothing to the fusion.
+  These records let fusion be replayed offline with other parameters.
 * Relevance operations with the `bayesian` strategy write a `"kind": "hits"` record per query for the fused probabilities, with the operation name in `op`.
 
 Join the hits with `qrels.tsv` to compute reliability curves; unjudged documents count as not relevant.
 `dump-bayesian-calibration` runs one search per field and judged query, so it adds about as much time as one relevance operation per field.
+Candidate scores add one search per field and one per `bayesian` strategy for each query, so the operation takes about as long as running every `bayesian` relevance operation once more.
 
 ### License
 

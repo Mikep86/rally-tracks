@@ -436,6 +436,9 @@ class BayesianCalibrationParamSource:
         self._index_name = params.get("index", default_index)
         self._size = params.get("size", 100)
         self._fields = params["fields"]
+        self._candidate_scores = params.get("candidate-scores", True)
+        self._candidate_depths = params.get("candidate-depths", {})
+        self._fused_strategies = params.get("fused-strategies", [])
         self._queries = read_queries(os.path.join(TRACK_DIR, QUERIES_FILENAME))
         self.infinite = True
 
@@ -443,7 +446,15 @@ class BayesianCalibrationParamSource:
         return self
 
     def params(self):
-        return {"index": self._index_name, "size": self._size, "fields": self._fields, "queries": self._queries}
+        return {
+            "index": self._index_name,
+            "size": self._size,
+            "fields": self._fields,
+            "candidate-scores": self._candidate_scores,
+            "candidate-depths": self._candidate_depths,
+            "fused-strategies": self._fused_strategies,
+            "queries": self._queries,
+        }
 
 
 PARAMETER_PATTERN = re.compile(r"(alpha|beta|baseRate)=([-+0-9.eE]+)")
@@ -455,12 +466,31 @@ class BayesianCalibrationRunner:
     - the bayesian parameters each field was fitted with, read from a _validate/query explanation of a single-field bayesian
       multi_match ("kind": "parameters", one record per field and shard);
     - for every judged query and field, the hits of a single-field bayesian multi_match with their scores, which are that
-      field's calibrated probabilities ("kind": "hits", op "calibration-<field>").
+      field's calibrated probabilities ("kind": "hits", op "calibration-<field>");
+    - with candidate-scores, every field's probability for each query's candidates ("kind": "scores"), so that fusion can be
+      replayed offline with other parameters. The candidates are the union of each field's top candidate-depths[field] hits
+      (default: size) and the top size hits of each strategy in fused-strategies. A candidate that a field does not match
+      has no probability for it (null), as in the fusion.
     The parameters are also returned, so they are stored with the operation's metrics.
     """
 
+    @staticmethod
+    async def _search(es, index, body):
+        return await es.perform_request(
+            method="POST",
+            path=f"/{index}/_search",
+            params={"request_cache": "false"},
+            headers={"Content-Type": "application/json"},
+            body=body,
+        )
+
+    @staticmethod
+    def _field_query(field, text):
+        return {"multi_match": {"query": text, "type": "bayesian", "fields": [field]}}
+
     async def __call__(self, es, params):
         index, size, fields, queries = params["index"], params["size"], params["fields"], params["queries"]
+        candidate_scores = params["candidate-scores"]
         # A judged query, so that the mock embedding server can embed it for the semantic field
         probe = queries[0]["text"]
         parameters = {}
@@ -479,22 +509,43 @@ class BayesianCalibrationRunner:
                 per_shard.append(found)
                 log_dump({"kind": "parameters", "field": field, "parameters": found, "explanation": explanation})
             parameters[field] = per_shard[0] if per_shard else {}
-        for field in fields:
-            for query in queries:
-                response = await es.perform_request(
-                    method="POST",
-                    path=f"/{index}/_search",
-                    params={"request_cache": "false"},
-                    headers={"Content-Type": "application/json"},
-                    body={
-                        "query": {"multi_match": {"query": query["text"], "type": "bayesian", "fields": [field]}},
-                        "size": size,
-                        "_source": False,
-                    },
-                )
+        candidate_counts = []
+        for query in queries:
+            # a dict rather than a set, to keep the candidates in the order they were found
+            candidates = {}
+            for field in fields:
+                depth = max(size, params["candidate-depths"].get(field, size)) if candidate_scores else size
+                body = {"query": self._field_query(field, query["text"]), "size": depth, "_source": False}
+                response = await self._search(es, index, body)
                 hits = [[h["_id"], h["_score"]] for h in response["hits"]["hits"]]
-                log_dump({"kind": "hits", "op": f"calibration-{field}", "field": field, "query_id": query["query_id"], "hits": hits})
+                log_dump({"kind": "hits", "op": f"calibration-{field}", "field": field, "query_id": query["query_id"], "hits": hits[:size]})
+                candidates.update((doc, None) for doc, _ in hits)
+            if candidate_scores:
+                for strategy_params in params["fused-strategies"]:
+                    response = await self._search(es, index, build_search_body(strategy_params, query["text"], size))
+                    candidates.update((h["_id"], None) for h in response["hits"]["hits"])
+                ids = list(candidates)
+                scores = {doc: [None] * len(fields) for doc in ids}
+                for i, field in enumerate(fields):
+                    # Elasticsearch applies the ids filter to a vector field's kNN search as a pre-filter, so every candidate
+                    # gets a vector probability, not only the approximate top k
+                    response = await self._search(
+                        es,
+                        index,
+                        {
+                            "query": {"bool": {"must": [self._field_query(field, query["text"])], "filter": [{"ids": {"values": ids}}]}},
+                            "size": len(ids),
+                            "_source": False,
+                        },
+                    )
+                    for h in response["hits"]["hits"]:
+                        scores[h["_id"]][i] = h["_score"]
+                rows = [[doc, *scores[doc]] for doc in ids]
+                log_dump({"kind": "scores", "query_id": query["query_id"], "fields": fields, "scores": rows})
+                candidate_counts.append(len(ids))
         result = {"fields": fields, "queries": len(queries), "size": size, "parameters": parameters}
+        if candidate_counts:
+            result["mean_candidates"] = sum(candidate_counts) / len(candidate_counts)
         logger.info("Bayesian calibration parameters: %s", parameters)
         return result
 
